@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CourtSync Data Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0b0d;
+    --panel: #17181c;
+    --border: #2b2c31;
+    --text: #e8e8ea;
+    --muted: #8a8b92;
+    --amber: #ffcc33;
+    --amber-dim: #4a3f1a;
+    --cyan: #33e6ff;
+    --cyan-dim: #123a40;
+    --led-green: #2bff63;
+    --led-green-glow: rgba(43,255,99,0.6);
+    --led-red: #ff2e2e;
+    --led-red-glow: rgba(255,46,46,0.55);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  }
+  h1 {
+    margin: 0 0 4px 0;
+    font-size: 22px;
+    letter-spacing: 0.5px;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .panel h2 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+  }
+  textarea {
+    width: 100%;
+    height: 260px;
+    background: #0e0f12;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    font-family: "SF Mono", Consolas, Menlo, monospace;
+    font-size: 16px; /* iOS Safari auto-zooms the whole page on focus for any input/textarea under 16px -- this is the fix */
+    resize: vertical;
+    -webkit-appearance: none;
+  }
+  .controls {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  button {
+    background: #232429;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    -webkit-appearance: none;
+  }
+  button:hover { background: #2c2d33; }
+  button.primary {
+    background: var(--amber);
+    color: #1a1500;
+    border-color: var(--amber);
+    font-weight: 600;
+  }
+  button.primary:hover { filter: brightness(1.08); }
+
+  .status-line {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    min-height: 16px;
+  }
+
+  .scoreboard-bezel {
+    background: linear-gradient(180deg, #2a2a2c, #141416);
+    border: 3px solid #000;
+    border-radius: 10px;
+    padding: 16px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06);
+    max-width: 860px;
+    margin: 0 auto;
+  }
+  .board {
+    background: #000;
+    border-radius: 4px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .board-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .board-brand {
+    font-family: "VT323", "Consolas", monospace;
+    font-size: 15px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    white-space: nowrap;
+    text-align: center;
+    flex: 0 0 auto;
+  }
+
+  /* Every readout (fouls / clock / score / period / team name) is one of
+     these bordered LED panels: a thin light-grey frame around a near-
+     black inset with a faint dot-matrix texture, like the physical LED
+     cells on a real scoreboard. */
+  .led-box {
+    border: 2px solid #565961;
+    border-radius: 3px;
+    background-color: #0a0a0a;
+    background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1.3px);
+    background-size: 5px 5px;
+    text-align: center;
+    padding: 4px 6px;
+  }
+  .led-label {
+    font-family: "VT323", "Consolas", monospace;
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: #9a9da4;
+    text-transform: uppercase;
+  }
+
+  /* The ghost/value overlay: a dim, always-on copy of every possible
+     segment sits behind the real value, exactly like the "dead" LEDs
+     you can see faintly lit on a real board even where nothing is on.
+     Both are centered in the same box so they sit on top of each other. */
+  .led-cell {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "VT323", "Consolas", monospace;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .led-cell .ghost {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255,255,255,0.06);
+    user-select: none;
+  }
+  .led-cell .value { position: relative; z-index: 1; }
+
+  .top-row { align-items: stretch; }
+  .side-cluster {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .mini-label { margin-bottom: 2px; }
+  .subs-cluster { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .subs-btn { width: 22px; height: 22px; border-radius: 50%; }
+  .subs-btn.solid { background: radial-gradient(circle at 35% 30%, #a8672e, #5f380f); }
+  .subs-btn.ring { background: transparent; border: 4px solid var(--led-red); box-sizing: border-box; }
+
+  .amber-digit .led-cell, .amber-digit { color: var(--amber); }
+  .led-box.timeout { width: clamp(40px, 8vw, 56px); }
+  .led-box.timeout .led-cell {
+    font-size: clamp(22px, 5vw, 34px);
+    height: clamp(28px, 6vw, 40px);
+    color: var(--amber);
+  }
+
+  .led-box.fouls { width: clamp(50px, 9vw, 70px); }
+  .led-box.fouls .led-cell {
+    font-size: clamp(24px, 5.5vw, 36px);
+    height: clamp(30px, 6.5vw, 44px);
+    color: var(--led-red);
+  }
+
+  .led-box.clock { flex: 1 1 auto; min-width: 0; max-width: 300px; }
+  .led-box.clock .led-cell {
+    font-size: clamp(24px, 6vw, 56px);
+    height: clamp(30px, 7vw, 60px);
+    color: var(--led-green);
+  }
+
+  .led-box.score { flex: 1 1 0; min-width: 0; }
+  .led-box.score .led-cell {
+    font-size: clamp(32px, 10vw, 104px);
+    height: clamp(40px, 11vw, 116px);
+    color: var(--led-green);
+  }
+
+  .led-box.teamname { flex: 1 1 0; min-width: 0; }
+  .led-box.teamname .led-cell {
+    font-size: clamp(16px, 4vw, 28px);
+    height: clamp(20px, 5vw, 34px);
+    letter-spacing: clamp(2px, 1vw, 6px);
+    color: var(--led-red);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  tr.home td.team-tag { color: var(--amber); }
+  tr.away td.team-tag { color: var(--cyan); }
+  td.num { font-variant-numeric: tabular-nums; }
+
+  .empty-note {
+    color: var(--muted);
+    font-size: 13px;
+    padding: 8px 0;
+  }
+
+  .table-wrap {
+    max-height: 420px;
+    overflow-y: auto;
+  }
+
+  .players-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  .team-player-panel {
+    min-width: 0;
+  }
+  .team-section-title {
+    margin: 0 0 6px;
+    font-size: 12px;
+    letter-spacing: 1px;
+    font-weight: 600;
+  }
+  .home-title { color: var(--amber); }
+  .away-title { color: var(--cyan); }
+  .player-team-wrap { max-height: 420px; }
+
+  @media (max-width: 700px) {
+    .players-split { grid-template-columns: 1fr; }
+  }
+
+</style>
+</head>
+<body>
+
+<h1>CourtSync Data Viewer</h1>
+<div class="subtitle">
+  Paste a CourtSync export below — either the raw BLE notification lines (from nRF Connect) or a full Serial Monitor dump. Anything that isn't a recognized data line is ignored automatically.
+</div>
+
+<div class="scoreboard-bezel">
+  <div class="board">
+
+    <!-- Top row: team fouls and elapsed game time from the most recent event. -->
+    <div class="board-row top-row">
+      <div class="led-box fouls">
+        <div class="led-label">Fouls</div>
+        <div class="led-cell"><span class="ghost">8</span><span class="value" id="homeFouls">0</span></div>
+      </div>
+
+      <div class="led-box clock">
+        <div class="led-cell"><span class="ghost">88:88</span><span class="value" id="gameClock">00:00</span></div>
+      </div>
+
+      <div class="led-box fouls">
+        <div class="led-label">Fouls</div>
+        <div class="led-cell"><span class="ghost">8</span><span class="value" id="awayFouls">0</span></div>
+      </div>
+    </div>
+
+    <!-- Middle row: team scores. -->
+    <div class="board-row mid-row">
+      <div class="led-box score">
+        <div class="led-cell"><span class="ghost">888</span><span class="value" id="homePts">0</span></div>
+      </div>
+
+      <div class="led-box score">
+        <div class="led-cell"><span class="ghost">888</span><span class="value" id="awayPts">0</span></div>
+      </div>
+    </div>
+
+    <!-- Bottom row: team names, real (if limited to HOME/AWAY -- the
+         firmware has no custom-name support). -->
+    <div class="board-row bottom-row">
+      <div class="led-box teamname"><div class="led-cell"><span class="value">HOME</span></div></div>
+      <div class="board-brand">CourtSync</div>
+      <div class="led-box teamname"><div class="led-cell"><span class="value">AWAY</span></div></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="layout" style="margin-top:20px;">
+  <div class="panel">
+    <h2>Paste data</h2>
+    <textarea id="input" placeholder="P,HOME,17,12,3&#10;P,AWAY,05,8,1&#10;E,HOME,17,PTS,3,4523&#10;E,AWAY,05,FOUL,1,9871&#10;END"></textarea>
+    <div class="controls">
+      <button class="primary" onclick="parseAndRender()">Parse</button>
+      <button onclick="clearAll()">Clear</button>
+      <button onclick="loadSample()">Load sample</button>
+    </div>
+    <div class="status-line" id="status"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Players</h2>
+
+    <div class="players-split">
+      <div class="team-player-panel">
+        <h3 class="team-section-title home-title">HOME</h3>
+        <div class="table-wrap player-team-wrap">
+          <table id="homePlayerTable">
+            <thead>
+              <tr><th>#</th><th>Points</th><th>Fouls</th></tr>
+            </thead>
+            <tbody id="homePlayerBody"></tbody>
+          </table>
+          <div class="empty-note" id="homePlayerEmpty">No HOME player data parsed yet.</div>
+        </div>
+      </div>
+
+      <div class="team-player-panel">
+        <h3 class="team-section-title away-title">AWAY</h3>
+        <div class="table-wrap player-team-wrap">
+          <table id="awayPlayerTable">
+            <thead>
+              <tr><th>#</th><th>Points</th><th>Fouls</th></tr>
+            </thead>
+            <tbody id="awayPlayerBody"></tbody>
+          </table>
+          <div class="empty-note" id="awayPlayerEmpty">No AWAY player data parsed yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:20px;">
+  <h2>Event history</h2>
+  <div class="table-wrap">
+    <table id="eventTable">
+      <thead>
+        <tr><th>Time</th><th>Team</th><th>#</th><th>Event</th><th>Amount</th></tr>
+      </thead>
+      <tbody id="eventBody"></tbody>
+    </table>
+    <div class="empty-note" id="eventEmpty">No event data parsed yet.</div>
+  </div>
+</div>
+
+<script>
+  const SAMPLE = [
+    "===== CourtSync stat dump =====",
+    "TEAM\tPLAYER\tPOINTS\tFOULS",
+    "P,HOME,17,12,3",
+    "P,HOME,23,6,2",
+    "P,AWAY,05,8,1",
+    "P,AWAY,11,2,0",
+    "--- Event history (oldest first) ---",
+    "E,HOME,17,PTS,3,4523",
+    "E,HOME,17,FOUL,1,9871",
+    "E,AWAY,05,PTS,2,15234",
+    "E,HOME,23,PTS,2,18902",
+    "E,AWAY,11,FOUL,1,20112",
+    "================================",
+    "END"
+  ].join("\n");
+
+  function loadSample() {
+    document.getElementById("input").value = SAMPLE;
+    parseAndRender();
+  }
+
+  function clearAll() {
+    document.getElementById("input").value = "";
+    parseAndRender();
+  }
+
+  function formatTime(ms) {
+    const totalSec = Math.floor(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return String(m) + ":" + String(s).padStart(2, "0");
+  }
+
+  function parseAndRender() {
+    const raw = document.getElementById("input").value;
+    const lines = raw.split(/\r?\n/);
+
+    const players = []; // { team, player, points, fouls }
+    const events = [];  // { team, player, type, amount, timeMs }
+    let malformed = 0;
+
+    const pRe = /^P,(HOME|AWAY),(\d+),(\d+),(\d+)\s*$/;
+    const eRe = /^E,(HOME|AWAY),(\d+),(PTS|FOUL),(-?\d+),(\d+)\s*$/;
+
+    // Matches nRF Connect (and similar BLE log tools) lines like:
+    //   Normal: Updated Value of Characteristic <uuid> to 502C 484F ... .
+    // where the actual data arrives as a hex blob embedded in a log
+    // sentence rather than as a plain line. The companion
+    // 'Application: "502C 484F ..." value received.' line nRF Connect
+    // also prints for the same event has no standalone "to" before its
+    // hex blob, so this pattern naturally skips it -- without that, the
+    // same line would otherwise get decoded and counted twice.
+    const hexLogRe = /\bto\b\s+([0-9A-Fa-f][0-9A-Fa-f\s-]*[0-9A-Fa-f])\s*\.?\s*$/i;
+
+    // First pass: turn the pasted text into a flat list of records.
+    //
+    // One BLE packet no longer carries exactly one record. The firmware
+    // packs as many lines as fit into each indication (each indication
+    // costs a full round trip to the phone, so batching is what keeps a
+    // sync from taking a second per line), which means a single decoded
+    // hex blob routinely contains several newline-separated records and
+    // has to be split back apart. The record patterns below are anchored
+    // with ^ and $, so a multi-record blob left whole would match nothing
+    // at all and the sync would look empty.
+    //
+    // Plainly pasted text is unaffected: it splits to one record per line
+    // and passes straight through.
+    const records = [];
+    for (const rawLine of lines) {
+      const trimmedRaw = rawLine.trim();
+      if (trimmedRaw === "") continue;
+
+      const hexMatch = trimmedRaw.match(hexLogRe);
+      if (hexMatch) {
+        const hexDigits = hexMatch[1].replace(/[^0-9A-Fa-f]/g, "");
+        if (hexDigits.length > 0 && hexDigits.length % 2 === 0) {
+          let decoded = "";
+          for (let i = 0; i < hexDigits.length; i += 2) {
+            decoded += String.fromCharCode(parseInt(hexDigits.substr(i, 2), 16));
+          }
+          for (const part of decoded.split(/\r?\n/)) {
+            const p = part.trim();
+            if (p !== "") records.push(p);
+          }
+          continue;
+        }
+      }
+      records.push(trimmedRaw);
+    }
+
+    for (const trimmed of records) {
+      if (trimmed === "END") continue;
+
+      let m = trimmed.match(pRe);
+      if (m) {
+        players.push({
+          team: m[1],
+          player: m[2],
+          points: parseInt(m[3], 10),
+          fouls: parseInt(m[4], 10),
+        });
+        continue;
+      }
+
+      m = trimmed.match(eRe);
+      if (m) {
+        events.push({
+          team: m[1],
+          player: m[2],
+          type: m[3],
+          amount: parseInt(m[4], 10),
+          timeMs: parseInt(m[5], 10),
+        });
+        continue;
+      }
+
+      // Anything else (dump headers, tab-separated summary rows, blank
+      // separators) is expected and silently skipped -- only count lines
+      // that look like they were TRYING to be a P/E line but didn't match,
+      // as a rough malformed-input signal.
+      if (/^P,/.test(trimmed) || /^E,/.test(trimmed)) {
+        malformed++;
+      }
+    }
+
+    players.sort((a, b) => {
+      if (a.team !== b.team) return a.team === "HOME" ? -1 : 1;
+      return parseInt(a.player, 10) - parseInt(b.player, 10);
+    });
+    events.sort((a, b) => a.timeMs - b.timeMs);
+
+    renderScoreboard(players);
+    renderPlayers(players);
+    renderEvents(events);
+
+    // The board's clock is the elapsed game time of the most recent
+    // event, not a live countdown -- CourtSync has no running clock,
+    // just per-event timestamps, so this is the closest real number.
+    document.getElementById("gameClock").textContent =
+      events.length ? formatTime(events[events.length - 1].timeMs) : "00:00";
+
+    const status = document.getElementById("status");
+    let msg = `Parsed ${players.length} player line(s), ${events.length} event(s).`;
+    if (malformed > 0) msg += ` ${malformed} line(s) looked like data but didn't match the expected format.`;
+    status.textContent = msg;
+  }
+
+  function renderScoreboard(players) {
+    let homePts = 0, homeFouls = 0, awayPts = 0, awayFouls = 0;
+    for (const p of players) {
+      if (p.team === "HOME") { homePts += p.points; homeFouls += p.fouls; }
+      else { awayPts += p.points; awayFouls += p.fouls; }
+    }
+    document.getElementById("homePts").textContent = homePts;
+    document.getElementById("homeFouls").textContent = homeFouls;
+    document.getElementById("awayPts").textContent = awayPts;
+    document.getElementById("awayFouls").textContent = awayFouls;
+  }
+
+  function renderPlayers(players) {
+    const homeBody = document.getElementById("homePlayerBody");
+    const awayBody = document.getElementById("awayPlayerBody");
+    const homeEmpty = document.getElementById("homePlayerEmpty");
+    const awayEmpty = document.getElementById("awayPlayerEmpty");
+
+    homeBody.innerHTML = "";
+    awayBody.innerHTML = "";
+
+    const homePlayers = players
+      .filter(p => p.team === "HOME")
+      .sort((a, b) => parseInt(a.player, 10) - parseInt(b.player, 10));
+    const awayPlayers = players
+      .filter(p => p.team === "AWAY")
+      .sort((a, b) => parseInt(a.player, 10) - parseInt(b.player, 10));
+
+    homeEmpty.style.display = homePlayers.length ? "none" : "block";
+    awayEmpty.style.display = awayPlayers.length ? "none" : "block";
+
+    function addRows(list, body) {
+      for (const p of list) {
+        const tr = document.createElement("tr");
+        tr.className = p.team.toLowerCase();
+        tr.innerHTML = `
+          <td class="num">${p.player}</td>
+          <td class="num">${p.points}</td>
+          <td class="num">${p.fouls}</td>
+        `;
+        body.appendChild(tr);
+      }
+    }
+
+    addRows(homePlayers, homeBody);
+    addRows(awayPlayers, awayBody);
+  }
+
+  function renderEvents(events) {
+    const body = document.getElementById("eventBody");
+    const empty = document.getElementById("eventEmpty");
+    body.innerHTML = "";
+    empty.style.display = events.length ? "none" : "block";
+
+    for (const e of events) {
+      const tr = document.createElement("tr");
+      tr.className = e.team.toLowerCase();
+      const eventLabel = e.type === "PTS" ? "Points" : "Foul";
+      tr.innerHTML = `
+        <td class="num">${formatTime(e.timeMs)}</td>
+        <td class="team-tag">${e.team}</td>
+        <td class="num">${e.player}</td>
+        <td>${eventLabel}</td>
+        <td class="num">${e.amount}</td>
+      `;
+      body.appendChild(tr);
+    }
+  }
+
+  // Render an empty state on load.
+  parseAndRender();
+</script>
+
+</body>
+</html>

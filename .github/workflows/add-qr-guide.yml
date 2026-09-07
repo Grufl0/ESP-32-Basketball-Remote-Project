@@ -1,0 +1,57 @@
+name: Add QR shortcut to remote guide
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/add-qr-guide.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-guide:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Add INFO + SYNC QR code instruction
+        shell: python
+        run: |
+          import base64
+          import re
+          from pathlib import Path
+
+          path = Path("index.html")
+          text = path.read_text(encoding="utf-8")
+          match = re.search(r"('remote-guide': ')([^']+)(')", text)
+          if not match:
+              raise SystemExit("remote-guide payload not found")
+
+          guide = base64.b64decode(match.group(2)).decode("utf-8")
+          new_row = '    <div class="key-row"><span class="key-label">INFO + SYNC</span><div class="key-copy"><strong>Show QR code</strong><span>Press INFO, then SYNC to bring up the QR code.</span></div></div>\n'
+          sync_row = '    <div class="key-row"><span class="key-label">SYNC</span><div class="key-copy"><strong>Open Bluetooth sync</strong><span>Starts advertising as <code>CourtSync</code>. Press SYNC again after the phone connects.</span></div></div>\n'
+
+          if "INFO + SYNC" not in guide:
+              if sync_row not in guide:
+                  raise SystemExit("SYNC guide row not found")
+              guide = guide.replace(sync_row, new_row + sync_row, 1)
+              encoded = base64.b64encode(guide.encode("utf-8")).decode("ascii")
+              text = text[:match.start(2)] + encoded + text[match.end(2):]
+              path.write_text(text, encoding="utf-8")
+
+      - name: Commit guide update
+        run: |
+          if git diff --quiet -- index.html; then
+            echo "Guide already updated"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Document INFO + SYNC QR code shortcut"
+          git push origin HEAD:main
